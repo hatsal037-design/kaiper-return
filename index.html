@@ -116,6 +116,14 @@
   .name-box input:focus{outline:none;border-color:var(--accent);}
   .name-box button{width:100%;height:56px;background:#000000;color:#fff;border:none;border-radius:13px;font-size:18px;font-weight:800;cursor:pointer;}
   .sync{font-weight:700;} .sync.ok{color:#9aa3ad;} .sync.pend{color:#d98a00;}
+  .track{margin-top:9px;font-size:13px;display:none;border-radius:9px;padding:10px 12px;line-height:1.55;}
+  .track.show{display:block;}
+  .track.loading{background:#eef1f4;color:#6a6e77;}
+  .track.ok{background:#e8f9ed;border:1px solid #b6e9c4;}
+  .track.fail{background:#fdebed;border:1px solid #f3c0c0;color:#b3253a;}
+  .track .ti{font-weight:800;font-size:14px;margin-bottom:2px;}
+  .track .ts{color:#3a3f46;}
+  .track .done{color:#15a83c;font-weight:800;} .track .moving{color:#d98a00;font-weight:800;}
 </style>
 </head>
 <body>
@@ -136,7 +144,8 @@
       <input id="waybillInput" type="text" inputmode="text" autocomplete="off" placeholder="택배 운송장 바코드 스캔/입력">
       <button class="scanbtn" data-target="waybillInput">📷 스캔</button>
     </div>
-    <div class="hint">반송된 택배 송장의 <b>운송장번호 바코드</b>를 찍으세요. (누가 반품했는지 주문 매칭용)</div>
+    <div class="hint">반송 송장의 <b>운송장번호 바코드</b>를 찍으면 — <b>상품명·배송상태</b>가 자동 조회돼요(CJ). 보내는분 이름은 택배사가 안 줘요. · <span style="text-decoration:underline;cursor:pointer;font-weight:700" onclick="setTrackKey()">🔑 택배조회 키 설정</span></div>
+    <div id="trackResult" class="track"></div>
   </div>
 
   <div class="serial">
@@ -278,6 +287,29 @@
   serialInput.addEventListener('input',function(){ state['_serial']=serialInput.value; save(); });
   memoInput.addEventListener('input',function(){ state['_memo']=memoInput.value; save(); });
 
+  // 택배 조회 (스윗트래커 통합 API · CJ=04) — 키는 코드에 박지 않고 이 기기(localStorage)에만 저장
+  var TKEY='kaiper_ret_trackkey', TRACK_KEY=localStorage.getItem(TKEY)||'', TRACK_CODE='04';
+  var trackEl=document.getElementById('trackResult');
+  function setTrack(cls,html){ trackEl.className='track show '+cls; trackEl.innerHTML=html; }
+  function setTrackKey(){ var k=prompt('스윗트래커 택배조회 API 키 (이 기기에만 저장, 저장소엔 안 올라감):', TRACK_KEY||''); if(k!=null){ TRACK_KEY=k.trim(); try{ localStorage.setItem(TKEY,TRACK_KEY); }catch(e){} if(state['_waybill']) lookupTracking(state['_waybill']); else { trackEl.className='track'; trackEl.innerHTML=''; } } }
+  window.setTrackKey=setTrackKey;
+  function lookupTracking(inv){
+    inv=(''+(inv||'')).replace(/[^0-9]/g,'');
+    state['_item']=''; state['_delivery']='';
+    if(inv.length<8){ trackEl.className='track'; trackEl.innerHTML=''; return; }
+    if(!TRACK_KEY){ setTrack('fail','🔑 택배조회 키 미설정 — <span style="text-decoration:underline;cursor:pointer;font-weight:800" onclick="setTrackKey()">키 설정하기</span>'); return; }
+    setTrack('loading','🔍 택배 조회 중…');
+    fetch('https://info.sweettracker.co.kr/api/v1/trackingInfo?t_key='+TRACK_KEY+'&t_code='+TRACK_CODE+'&t_invoice='+inv)
+      .then(function(r){ return r.json(); }).then(function(d){
+        if(!d || d.status===false || d.result!=='Y'){ setTrack('fail','⚠️ 택배 조회 결과 없음'+(d&&d.msg?' ('+esc(d.msg)+')':'')); return; }
+        var item=d.itemName||'', ls=d.lastStateDetail||{}, kind=ls.kind||'', where=ls.where||'', t=ls.timeString||'', done=!!d.complete;
+        state['_item']=item; state['_delivery']=(done?'배송완료':kind)+(where?' / '+where:'')+(t?' / '+t:''); save();
+        setTrack('ok','<div class="ti">📦 '+(esc(item)||'(상품명 없음)')+'</div><div class="ts"><span class="'+(done?'done':'moving')+'">'+(done?'✅ 배송완료':('🚚 '+esc(kind||'배송중')))+'</span>'+(where?' · '+esc(where):'')+(t?' · '+esc(t):'')+'</div>');
+      }).catch(function(){ setTrack('fail','⚠️ 조회 실패 (인터넷 확인)'); });
+  }
+  waybillInput.addEventListener('change',function(){ lookupTracking(waybillInput.value); });
+  if(state['_waybill']) lookupTracking(state['_waybill']);
+
   // 바코드 스캐너 (대상 입력칸 지정)
   var scanOv=document.getElementById('scanOv'), html5qr=null, torchOn=false, scanTarget=null;
   function fmtList(){ if(!window.Html5QrcodeSupportedFormats) return undefined; var F=Html5QrcodeSupportedFormats;
@@ -289,8 +321,10 @@
     var vc={ facingMode:"environment", width:{ideal:1920}, height:{ideal:1080}, advanced:[{focusMode:"continuous"}] };
     html5qr.start({facingMode:"environment"}, {fps:12, videoConstraints:vc},
       function(text){
-        var inp=document.getElementById(scanTarget); if(inp){ inp.value=text; state[scanTarget==='serialInput'?'_serial':'_waybill']=text; save(); }
+        var tgt=scanTarget;
+        var inp=document.getElementById(tgt); if(inp){ inp.value=text; state[tgt==='serialInput'?'_serial':'_waybill']=text; save(); }
         if(navigator.vibrate) navigator.vibrate(90); stopScan();
+        if(tgt==='waybillInput') lookupTracking(text);
       }, function(){}
     ).then(function(){
       try{
@@ -366,10 +400,12 @@
     var d=new Date();
     var dt=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes());
     var rec={id:uid(), inspector:inspector, waybill:waybill, serial:serial, dt:dt,
+      item:(state['_item']||''), delivery:(state['_delivery']||''),
       reason:state['reason']||'', working:state['working']||'', pkg:state['pkg']||'', dispo:state['dispo']||'', memo:(state['_memo']||'').trim()};
     records.push(rec); saveRecords();
     pending.push(rec); savePending(); flushPending();
     state={}; save(); render(); waybillInput.value=''; serialInput.value=''; memoInput.value='';
+    trackEl.className='track'; trackEl.innerHTML='';
     window.scrollTo({top:0,behavior:'smooth'});
     toast('✓ 저장됨 ['+rec.dispo+'] · 총 '+dedup(records).length+'건');
   }
@@ -395,7 +431,7 @@
     list.forEach(function(r){
       h+='<div class="rec-row">'
         +'<div class="rec-top"><b>'+(esc(r.serial)||'(시리얼 없음)')+'</b><span class="dchip d'+esc(r.dispo)+'">'+esc(r.dispo||'-')+'</span></div>'
-        +'<div class="rec-meta"><span class="k">운송장</span> '+esc(r.waybill||'-')+' · <span class="k">사유</span> '+esc(r.reason||'-')+'<br><span class="k">작동</span> '+esc(r.working||'-')+' · <span class="k">패키지</span> '+esc(r.pkg||'-')+'<br>'+esc(r.dt||'')+(r.inspector?' · '+esc(r.inspector):'')+'</div>'
+        +'<div class="rec-meta">'+(r.item?'<span class="k">상품</span> '+esc(r.item)+'<br>':'')+(r.delivery?'<span class="k">배송</span> '+esc(r.delivery)+'<br>':'')+'<span class="k">운송장</span> '+esc(r.waybill||'-')+' · <span class="k">사유</span> '+esc(r.reason||'-')+'<br><span class="k">작동</span> '+esc(r.working||'-')+' · <span class="k">패키지</span> '+esc(r.pkg||'-')+'<br>'+esc(r.dt||'')+(r.inspector?' · '+esc(r.inspector):'')+'</div>'
         +(r.memo?'<div class="rec-memo">'+esc(r.memo)+'</div>':'')
         +(local?'<div class="rec-foot"><button class="rec-del" data-id="'+esc(r.id||'')+'">삭제</button></div>':'')
         +'</div>';
@@ -428,8 +464,8 @@
   document.getElementById('exportBtn').addEventListener('click',function(){
     var all=dedup(curList()); var list=filterDispo? all.filter(function(r){ return r.dispo===filterDispo; }) : all;
     if(!list.length){ toast('내보낼 기록이 없어요'); return; }
-    var rows=[['번호','검수자','운송장번호','시리얼','검수일시','반품사유','작동상태','패키지상태','처분','비고']];
-    list.forEach(function(r,i){ rows.push([i+1, r.inspector||'', r.waybill||'', r.serial||'', r.dt||'', r.reason||'', r.working||'', r.pkg||'', r.dispo||'', r.memo||'']); });
+    var rows=[['번호','검수자','운송장번호','시리얼','상품명','배송상태','검수일시','반품사유','작동상태','패키지상태','처분','비고']];
+    list.forEach(function(r,i){ rows.push([i+1, r.inspector||'', r.waybill||'', r.serial||'', r.item||'', r.delivery||'', r.dt||'', r.reason||'', r.working||'', r.pkg||'', r.dispo||'', r.memo||'']); });
     var csv=rows.map(function(row){ return row.map(function(c){ c=(''+c).replace(/"/g,'""'); return /[",\n\r]/.test(c)?'"'+c+'"':c; }).join(','); }).join('\r\n');
     var blob=new Blob([String.fromCharCode(0xFEFF)+csv],{type:'text/csv;charset=utf-8;'});
     var d=new Date(), tag=(viewMode==='cloud'?'합본':'이기기')+(filterDispo?'_'+filterDispo:'');
