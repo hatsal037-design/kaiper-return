@@ -116,6 +116,14 @@
   .name-box input:focus{outline:none;border-color:var(--accent);}
   .name-box button{width:100%;height:56px;background:#000000;color:#fff;border:none;border-radius:13px;font-size:18px;font-weight:800;cursor:pointer;}
   .sync{font-weight:700;} .sync.ok{color:#9aa3ad;} .sync.pend{color:#d98a00;}
+  .ocrbtn{width:100%;background:#0096c7;color:#fff;border:none;font-weight:800;font-size:15px;padding:14px;border-radius:9px;cursor:pointer;}
+  .ocrbtn:active{transform:scale(.98);} .ocrbtn:disabled{opacity:.6;}
+  .ocrstat{display:none;margin-top:9px;font-size:12.5px;border-radius:8px;padding:10px 12px;line-height:1.55;}
+  .ocrstat.show{display:block;}
+  .ocrstat.load{background:#eef1f4;color:#3a3f46;}
+  .ocrstat.ok{background:#e8f9ed;border:1px solid #b6e9c4;}
+  .ocrstat.fail{background:#fdebed;border:1px solid #f3c0c0;color:#b3253a;}
+  .ocrstat .raw{margin-top:7px;font-size:11px;color:#6a6e77;white-space:pre-wrap;max-height:90px;overflow:auto;background:#fff;border-radius:6px;padding:7px;}
   .track{margin-top:9px;font-size:13px;display:none;border-radius:9px;padding:10px 12px;line-height:1.55;}
   .track.show{display:block;}
   .track.loading{background:#eef1f4;color:#6a6e77;}
@@ -139,21 +147,20 @@
 <main id="list">
 
   <div class="serial">
-    <label>① 반송 운송장번호</label>
-    <div class="srow">
-      <input id="waybillInput" type="text" inputmode="text" autocomplete="off" placeholder="택배 운송장 바코드 스캔/입력">
-      <button class="scanbtn" data-target="waybillInput">📷 스캔</button>
-    </div>
-    <div class="hint">반송 송장의 <b>운송장번호 바코드</b>를 찍으세요. (반품 특정용)</div>
+    <label>① 반송 운송장 — 📷 사진 찍어 자동입력</label>
+    <button type="button" id="ocrBtn" class="ocrbtn">📷 운송장 사진 찍기</button>
+    <input id="ocrFile" type="file" accept="image/*" capture="environment" style="display:none">
+    <div id="ocrStat" class="ocrstat"></div>
+    <input id="waybillInput" type="text" inputmode="text" autocomplete="off" placeholder="운송장번호 (자동·수정 가능)" style="margin-top:10px">
+    <div class="hint">송장 전체가 잘 보이게 <b>📷 사진</b>을 찍으면 — <b>운송장번호·보내는분 이름·전화</b>가 자동 입력돼요. 흐리거나 틀리면 칸에서 직접 수정하세요.</div>
   </div>
 
   <div class="serial">
-    <label>보내는분 (송장에서 · 변별용)</label>
+    <label>보내는분 (자동입력 · 수정 가능)</label>
     <div class="srow">
       <input id="senderInput" type="text" autocomplete="off" placeholder="이름 (예: 김*서)">
-      <input id="phoneInput" type="text" inputmode="tel" autocomplete="off" placeholder="전화 (예: 4334)">
+      <input id="phoneInput" type="text" inputmode="tel" autocomplete="off" placeholder="전화 (예: 010-4334)">
     </div>
-    <div class="hint">📷 <b>찍으면 자동입력</b> — 칸을 탭 → 키보드의 <b>「텍스트 스캔」</b> 아이콘 → 송장의 <b>보내는분 이름·전화</b>를 비추면 자동으로 들어가요. (바코드 아닌 글자라 이 방법으로)</div>
   </div>
 
   <div class="serial">
@@ -167,13 +174,13 @@
 
   <div class="step">검수 항목 — 눌러서 선택</div>
 
-  <div class="field" data-key="reason">
-    <div class="flabel">③ 반품 사유</div>
+  <div class="field" data-key="appearance">
+    <div class="flabel">③ 제품 외관</div>
     <div class="choices">
-      <button class="choice" data-v="단순변심">단순변심</button>
-      <button class="choice" data-v="제품불량">제품불량</button>
-      <button class="choice" data-v="배송파손">배송파손</button>
-      <button class="choice" data-v="오배송">오배송</button>
+      <button class="choice" data-v="양호">양호</button>
+      <button class="choice" data-v="스크래치">스크래치</button>
+      <button class="choice" data-v="찍힘·파손">찍힘·파손</button>
+      <button class="choice" data-v="오염·이물">오염·이물</button>
       <button class="choice" data-v="기타">기타</button>
     </div>
   </div>
@@ -260,6 +267,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
 (function(){
   var KEY='kaiper_ret_v1';
@@ -298,6 +306,31 @@
   memoInput.addEventListener('input',function(){ state['_memo']=memoInput.value; save(); });
   senderInput.addEventListener('input',function(){ state['_sender']=senderInput.value; save(); });
   phoneInput.addEventListener('input',function(){ state['_phone']=phoneInput.value; save(); });
+
+  // 운송장 사진 OCR — 한 장 찍으면 운송장번호·보내는분 이름·전화 자동입력
+  var ocrFile=document.getElementById('ocrFile'), ocrBtn=document.getElementById('ocrBtn'), ocrStat=document.getElementById('ocrStat');
+  function ocrShow(cls,html){ ocrStat.className='ocrstat show '+cls; ocrStat.innerHTML=html; }
+  ocrBtn.addEventListener('click',function(){ ocrFile.value=''; ocrFile.click(); });
+  ocrFile.addEventListener('change',function(){ if(ocrFile.files&&ocrFile.files[0]) runOCR(ocrFile.files[0]); });
+  function runOCR(file){
+    if(!window.Tesseract){ ocrShow('fail','⚠️ OCR 로딩 실패 — 인터넷 확인 후 다시'); return; }
+    ocrBtn.disabled=true; ocrShow('load','🔍 글자 인식 중… 처음엔 10~20초 걸려요(다음부턴 빨라짐)');
+    Tesseract.recognize(file,'kor+eng').then(function(res){
+      var text=(res&&res.data&&res.data.text)||'', flat=text.replace(/\s+/g,'');
+      var wm=flat.match(/\d{4}[-]?\d{4}[-]?\d{4}/);
+      var wb=wm?wm[0].replace(/[^0-9]/g,'').replace(/(\d{4})(\d{4})(\d{4})/,'$1-$2-$3'):'';
+      var name='', nm=text.match(/[가-힣]\s*\*\s*[가-힣]/);
+      if(nm) name=nm[0].replace(/\s/g,''); else { var bm=text.match(/보내는?\s*분[^가-힣]{0,6}([가-힣]{2,4})/); if(bm) name=bm[1]; }
+      var pm=flat.match(/01[0-9][-]?\d{3,4}/), phone=pm?pm[0]:'';
+      var got=[];
+      if(wb){ waybillInput.value=wb; state['_waybill']=wb; got.push('운송장 <b>'+esc(wb)+'</b>'); }
+      if(name){ senderInput.value=name; state['_sender']=name; got.push('이름 <b>'+esc(name)+'</b>'); }
+      if(phone){ phoneInput.value=phone; state['_phone']=phone; got.push('전화 <b>'+esc(phone)+'</b>'); }
+      save();
+      ocrShow(got.length?'ok':'fail',(got.length?'✅ 자동입력: '+got.join(' · '):'⚠️ 자동입력 실패 — 아래 원문 보고 직접 입력')+'<div class="raw">'+esc(text.trim()||'(인식된 글자 없음)')+'</div><div style="margin-top:5px;color:#9aa3ad;font-size:11px">⚠️ 틀린 값은 칸에서 직접 수정하세요</div>');
+      ocrBtn.disabled=false;
+    }).catch(function(e){ ocrShow('fail','⚠️ 인식 실패: '+esc((e&&e.message)||e)); ocrBtn.disabled=false; });
+  }
 
 
   // 바코드 스캐너 (대상 입력칸 지정)
@@ -390,7 +423,7 @@
     var dt=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes());
     var rec={id:uid(), inspector:inspector, waybill:waybill, serial:serial, dt:dt,
       sender:(state['_sender']||'').trim(), phone:(state['_phone']||'').trim(),
-      reason:state['reason']||'', working:state['working']||'', pkg:state['pkg']||'', dispo:state['dispo']||'', memo:(state['_memo']||'').trim()};
+      appearance:state['appearance']||'', working:state['working']||'', pkg:state['pkg']||'', dispo:state['dispo']||'', memo:(state['_memo']||'').trim()};
     records.push(rec); saveRecords();
     pending.push(rec); savePending(); flushPending();
     state={}; save(); render(); waybillInput.value=''; serialInput.value=''; memoInput.value=''; senderInput.value=''; phoneInput.value='';
@@ -419,7 +452,7 @@
     list.forEach(function(r){
       h+='<div class="rec-row">'
         +'<div class="rec-top"><b>'+(esc(r.serial)||'(시리얼 없음)')+'</b><span class="dchip d'+esc(r.dispo)+'">'+esc(r.dispo||'-')+'</span></div>'
-        +'<div class="rec-meta">'+((r.sender||r.phone)?'<span class="k">보내는분</span> '+esc(r.sender||'')+(r.phone?' ('+esc(r.phone)+')':'')+'<br>':'')+'<span class="k">운송장</span> '+esc(r.waybill||'-')+' · <span class="k">사유</span> '+esc(r.reason||'-')+'<br><span class="k">작동</span> '+esc(r.working||'-')+' · <span class="k">패키지</span> '+esc(r.pkg||'-')+'<br>'+esc(r.dt||'')+(r.inspector?' · '+esc(r.inspector):'')+'</div>'
+        +'<div class="rec-meta">'+((r.sender||r.phone)?'<span class="k">보내는분</span> '+esc(r.sender||'')+(r.phone?' ('+esc(r.phone)+')':'')+'<br>':'')+'<span class="k">운송장</span> '+esc(r.waybill||'-')+' · <span class="k">외관</span> '+esc(r.appearance||r.reason||'-')+'<br><span class="k">작동</span> '+esc(r.working||'-')+' · <span class="k">패키지</span> '+esc(r.pkg||'-')+'<br>'+esc(r.dt||'')+(r.inspector?' · '+esc(r.inspector):'')+'</div>'
         +(r.memo?'<div class="rec-memo">'+esc(r.memo)+'</div>':'')
         +(local?'<div class="rec-foot"><button class="rec-del" data-id="'+esc(r.id||'')+'">삭제</button></div>':'')
         +'</div>';
@@ -452,8 +485,8 @@
   document.getElementById('exportBtn').addEventListener('click',function(){
     var all=dedup(curList()); var list=filterDispo? all.filter(function(r){ return r.dispo===filterDispo; }) : all;
     if(!list.length){ toast('내보낼 기록이 없어요'); return; }
-    var rows=[['번호','검수자','운송장번호','시리얼','보내는분','전화일부','검수일시','반품사유','작동상태','패키지상태','처분','비고']];
-    list.forEach(function(r,i){ rows.push([i+1, r.inspector||'', r.waybill||'', r.serial||'', r.sender||'', r.phone||'', r.dt||'', r.reason||'', r.working||'', r.pkg||'', r.dispo||'', r.memo||'']); });
+    var rows=[['번호','검수자','운송장번호','시리얼','보내는분','전화일부','검수일시','제품외관','작동상태','패키지상태','처분','비고']];
+    list.forEach(function(r,i){ rows.push([i+1, r.inspector||'', r.waybill||'', r.serial||'', r.sender||'', r.phone||'', r.dt||'', r.appearance||r.reason||'', r.working||'', r.pkg||'', r.dispo||'', r.memo||'']); });
     var csv=rows.map(function(row){ return row.map(function(c){ c=(''+c).replace(/"/g,'""'); return /[",\n\r]/.test(c)?'"'+c+'"':c; }).join(','); }).join('\r\n');
     var blob=new Blob([String.fromCharCode(0xFEFF)+csv],{type:'text/csv;charset=utf-8;'});
     var d=new Date(), tag=(viewMode==='cloud'?'합본':'이기기')+(filterDispo?'_'+filterDispo:'');
