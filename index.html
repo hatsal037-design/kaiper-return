@@ -124,6 +124,7 @@
   .ncell::placeholder{font-size:11px;letter-spacing:0;}
   .ncell:focus{outline:none;background:#e3e7f5;}
   .nstar{font-size:20px;font-weight:800;color:#9097a0;flex:0 0 auto;}
+  .pfix{font-size:19px;font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums;letter-spacing:1px;flex:0 0 auto;}
   .writebanner{display:none;margin:16px;border-radius:14px;padding:18px 16px;text-align:center;color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.18);}
   .writebanner.show{display:block;}
   .writebanner .wb-cap{font-size:15px;font-weight:800;opacity:.97;}
@@ -174,10 +175,14 @@
       <input id="senderFirst" class="ncell" maxlength="1" autocomplete="off" placeholder="성">
       <span class="nstar">*</span>
       <input id="senderLast" class="ncell" maxlength="1" autocomplete="off" placeholder="끝">
-      <span class="ntag" style="margin-left:18px">전화</span>
-      <input id="phoneMid" class="ncell wide" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="가운데 4자리">
     </div>
-    <div class="hint">이름은 <b>성·끝 글자</b>만 (김*서 → 김 · 서), 전화는 <b>가운데 4자리</b>만 (010-<b>4334</b>-****).</div>
+    <div class="nrow" style="margin-top:11px">
+      <span class="ntag">전화</span>
+      <span class="pfix">010 -</span>
+      <input id="phoneMid" class="ncell wide" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="4자리">
+      <span class="pfix">- ****</span>
+    </div>
+    <div class="hint">이름은 <b>성·끝 글자</b>만 (김*서 → 김 · 서). 전화는 <b>가운데 4자리</b>만 입력.</div>
   </div>
 
   <div class="serial">
