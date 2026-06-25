@@ -148,20 +148,21 @@
 <main id="list">
 
   <div class="serial">
-    <label>① 반송 운송장 — 📷 사진 찍어 자동입력</label>
-    <button type="button" id="ocrBtn" class="ocrbtn">📷 운송장 사진 찍기</button>
-    <input id="ocrFile" type="file" accept="image/*" capture="environment" style="display:none">
-    <div id="ocrStat" class="ocrstat"></div>
-    <input id="waybillInput" type="text" inputmode="text" autocomplete="off" placeholder="운송장번호 (자동·수정 가능)" style="margin-top:10px">
-    <div class="hint">📷 <b>운송장번호·보내는분(이름·전화) 부분이 크고 또렷하게</b> 나오게 가까이 찍으세요 (송장 전체 X). 그 3개만 자동 입력돼요. 틀리면 칸에서 수정.</div>
+    <label>① 반송 운송장번호</label>
+    <div class="srow">
+      <input id="waybillInput" type="text" inputmode="text" autocomplete="off" placeholder="바코드 스캔 또는 입력">
+      <button class="scanbtn" data-target="waybillInput">📷 스캔</button>
+    </div>
+    <div class="hint">📷 스캔으로 송장의 <b>운송장번호 바코드</b>를 찍으면 자동 입력돼요.</div>
   </div>
 
   <div class="serial">
-    <label>보내는분 (자동입력 · 수정 가능)</label>
+    <label>보내는분 (이름·전화)</label>
     <div class="srow">
       <input id="senderInput" type="text" autocomplete="off" placeholder="이름 (예: 김*서)">
       <input id="phoneInput" type="text" inputmode="tel" autocomplete="off" placeholder="전화 (예: 010-4334)">
     </div>
+    <div class="hint">📷 <b>아이폰 텍스트 스캔</b> — 칸을 탭 → 키보드의 <b>「텍스트 스캔」</b> 아이콘 → 송장의 <b>「보내는분」 옆 이름·전화</b>를 비추면 자동 입력돼요. (애플 OCR이 정확)</div>
   </div>
 
   <div class="serial">
@@ -269,7 +270,6 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
 (function(){
   var KEY='kaiper_ret_v1';
@@ -323,37 +323,6 @@
   memoInput.addEventListener('input',function(){ state['_memo']=memoInput.value; save(); });
   senderInput.addEventListener('input',function(){ state['_sender']=senderInput.value; save(); });
   phoneInput.addEventListener('input',function(){ state['_phone']=phoneInput.value; save(); });
-
-  // 운송장 사진 OCR — 한 장 찍으면 운송장번호·보내는분 이름·전화 자동입력
-  var ocrFile=document.getElementById('ocrFile'), ocrBtn=document.getElementById('ocrBtn'), ocrStat=document.getElementById('ocrStat');
-  function ocrShow(cls,html){ ocrStat.className='ocrstat show '+cls; ocrStat.innerHTML=html; }
-  ocrBtn.addEventListener('click',function(){ ocrFile.value=''; ocrFile.click(); });
-  ocrFile.addEventListener('change',function(){ if(ocrFile.files&&ocrFile.files[0]) runOCR(ocrFile.files[0]); });
-  function runOCR(file){
-    if(!window.Tesseract){ ocrShow('fail','⚠️ OCR 로딩 실패 — 인터넷 확인 후 다시'); return; }
-    ocrBtn.disabled=true; ocrShow('load','🔍 글자 인식 중… 처음엔 10~20초 걸려요(다음부턴 빨라짐)');
-    Tesseract.recognize(file,'kor+eng').then(function(res){
-      var text=(res&&res.data&&res.data.text)||'';
-      // 운송장번호 = 대시 있는 4-4-4 (받는분코드·박스번호는 대시 없음·0000시작 제외), 첫 번째
-      var dashed=(text.match(/\d{4}\s*-\s*\d{4}\s*-\s*\d{4}/g)||[]).map(function(s){return s.replace(/\D/g,'');}).filter(function(d){return d.length===12 && d.slice(0,4)!=='0000';});
-      var wb=dashed.length?dashed[0].replace(/(\d{4})(\d{4})(\d{4})/,'$1-$2-$3'):'';
-      // 전화 = 010/011 + 대시 (코드엔 대시 없음)
-      var pm=text.match(/01[016789]\s*-\s*\d{3,4}(\s*-\s*\d{0,4})?/);
-      var phone=pm?pm[0].replace(/\s/g,''):'';
-      // 이름 = 마스킹(가*나) — *가 OCR에서 " ' x · 등으로 읽힘. 보내는분 근처 우선.
-      var name='';
-      var bm=text.match(/보내는?\s*분[\s:]*([가-힣]\s*[^가-힣\d\n]\s*[가-힣])/);
-      if(bm){ name=bm[1].replace(/\s/g,'').replace(/[^가-힣]/g,'*'); }
-      else { var nm=text.match(/[가-힣][^가-힣\d\s\n][가-힣]/); if(nm) name=nm[0].replace(/[^가-힣]/g,'*'); }
-      var got=[];
-      if(wb){ waybillInput.value=wb; state['_waybill']=wb; got.push('운송장 <b>'+esc(wb)+'</b>'); }
-      if(name){ senderInput.value=name; state['_sender']=name; got.push('이름 <b>'+esc(name)+'</b>'); }
-      if(phone){ phoneInput.value=phone; state['_phone']=phone; got.push('전화 <b>'+esc(phone)+'</b>'); }
-      save();
-      ocrShow(got.length?'ok':'fail',(got.length?'✅ 자동입력: '+got.join(' · '):'⚠️ 자동입력 실패 — 아래 원문 보고 직접 입력')+'<div class="raw">'+esc(text.trim()||'(인식된 글자 없음)')+'</div><div style="margin-top:5px;color:#9aa3ad;font-size:11px">⚠️ 틀린 값은 칸에서 직접 수정하세요</div>');
-      ocrBtn.disabled=false;
-    }).catch(function(e){ ocrShow('fail','⚠️ 인식 실패: '+esc((e&&e.message)||e)); ocrBtn.disabled=false; });
-  }
 
 
   // 바코드 스캐너 (대상 입력칸 지정)
