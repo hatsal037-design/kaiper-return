@@ -41,6 +41,7 @@
   .field.crit{box-shadow:inset 3px 0 0 var(--crit);}
   .flabel{font-size:14px;font-weight:700;margin-bottom:9px;}
   .flabel .badge{display:inline-block;background:var(--critbg);color:var(--crit);font-size:10px;font-weight:700;padding:1px 6px;margin-right:6px;vertical-align:1px;}
+  .autohint{font-size:12px;color:#0096c7;font-weight:700;background:#e7f7fd;border-radius:7px;padding:7px 10px;margin-bottom:9px;}
   .choices{display:flex;flex-wrap:wrap;gap:8px;}
   .choice{border:1.5px solid var(--line);background:#fff;color:#3a3f46;font-weight:700;font-size:14px;
     padding:11px 14px;border-radius:9px;cursor:pointer;flex:0 0 auto;}
@@ -152,7 +153,7 @@
     <input id="ocrFile" type="file" accept="image/*" capture="environment" style="display:none">
     <div id="ocrStat" class="ocrstat"></div>
     <input id="waybillInput" type="text" inputmode="text" autocomplete="off" placeholder="운송장번호 (자동·수정 가능)" style="margin-top:10px">
-    <div class="hint">송장 전체가 잘 보이게 <b>📷 사진</b>을 찍으면 — <b>운송장번호·보내는분 이름·전화</b>가 자동 입력돼요. 흐리거나 틀리면 칸에서 직접 수정하세요.</div>
+    <div class="hint">📷 <b>운송장번호·보내는분(이름·전화) 부분이 크고 또렷하게</b> 나오게 가까이 찍으세요 (송장 전체 X). 그 3개만 자동 입력돼요. 틀리면 칸에서 수정.</div>
   </div>
 
   <div class="serial">
@@ -206,7 +207,8 @@
   </div>
 
   <div class="field crit" data-key="dispo">
-    <div class="flabel"><span class="badge">처분</span>⑥ 처분 분류 — 어디로 보낼지</div>
+    <div class="flabel"><span class="badge">처분</span>⑥ 처분 분류 (자동 추천 · 수정 가능)</div>
+    <div class="autohint" id="dispoHint">외관·작동·패키지를 고르면 처분이 자동 추천돼요</div>
     <div class="choices">
       <button class="choice" data-v="재판매">♻️ 재판매</button>
       <button class="choice" data-v="리퍼">🔧 리퍼</button>
@@ -286,13 +288,28 @@
     });
     document.getElementById('pcount').textContent=done+' / '+FIELDS.length;
     document.getElementById('barfill').style.width=(done/FIELDS.length*100)+'%';
+    var dh=document.getElementById('dispoHint'); if(dh){ var rec=recommendDispo();
+      dh.textContent = rec ? ('🤖 자동추천: '+rec+(state['dispo']&&state['dispo']!==rec?' (지금 '+state['dispo']+' 선택됨)':'')+' · 다르면 직접 누르세요')
+        : '외관·작동·패키지를 고르면 처분이 자동 추천돼요'; }
+  }
+  function recommendDispo(){
+    var a=state['appearance'], w=state['working'], p=state['pkg'];
+    if(!a||!w||!p) return '';                       // 셋 다 골라야 추천
+    var aBad=a!=='양호', wBad=(w==='일부불량'||w==='작동불가'), pBad=p!=='양호';
+    if(aBad&&wBad) return '폐기';                    // 외관+작동 모두 이상
+    if(wBad) return '수리테스트';                    // 작동 이상
+    if(aBad||pBad) return '리퍼';                    // 외관 or 패키지 이상(작동 정상)
+    if(a==='양호'&&w==='정상작동'&&p==='양호') return '재판매';  // 모두 정상
+    return '';
   }
   FIELDS.forEach(function(f){
     var k=f.getAttribute('data-key');
     f.querySelectorAll('.choice').forEach(function(c){
       c.addEventListener('click',function(){
         var v=c.getAttribute('data-v');
-        state[k]=(state[k]===v)?'':v; save(); render();
+        state[k]=(state[k]===v)?'':v;
+        if(k==='appearance'||k==='working'||k==='pkg'){ var rec=recommendDispo(); state['_autoDispo']=rec; if(rec) state['dispo']=rec; }
+        save(); render();
       });
     });
   });
@@ -316,12 +333,18 @@
     if(!window.Tesseract){ ocrShow('fail','⚠️ OCR 로딩 실패 — 인터넷 확인 후 다시'); return; }
     ocrBtn.disabled=true; ocrShow('load','🔍 글자 인식 중… 처음엔 10~20초 걸려요(다음부턴 빨라짐)');
     Tesseract.recognize(file,'kor+eng').then(function(res){
-      var text=(res&&res.data&&res.data.text)||'', flat=text.replace(/\s+/g,'');
-      var wm=flat.match(/\d{4}[-]?\d{4}[-]?\d{4}/);
-      var wb=wm?wm[0].replace(/[^0-9]/g,'').replace(/(\d{4})(\d{4})(\d{4})/,'$1-$2-$3'):'';
-      var name='', nm=text.match(/[가-힣]\s*\*\s*[가-힣]/);
-      if(nm) name=nm[0].replace(/\s/g,''); else { var bm=text.match(/보내는?\s*분[^가-힣]{0,6}([가-힣]{2,4})/); if(bm) name=bm[1]; }
-      var pm=flat.match(/01[0-9][-]?\d{3,4}/), phone=pm?pm[0]:'';
+      var text=(res&&res.data&&res.data.text)||'';
+      // 운송장번호 = 대시 있는 4-4-4 (받는분코드·박스번호는 대시 없음·0000시작 제외), 첫 번째
+      var dashed=(text.match(/\d{4}\s*-\s*\d{4}\s*-\s*\d{4}/g)||[]).map(function(s){return s.replace(/\D/g,'');}).filter(function(d){return d.length===12 && d.slice(0,4)!=='0000';});
+      var wb=dashed.length?dashed[0].replace(/(\d{4})(\d{4})(\d{4})/,'$1-$2-$3'):'';
+      // 전화 = 010/011 + 대시 (코드엔 대시 없음)
+      var pm=text.match(/01[016789]\s*-\s*\d{3,4}(\s*-\s*\d{0,4})?/);
+      var phone=pm?pm[0].replace(/\s/g,''):'';
+      // 이름 = 마스킹(가*나) — *가 OCR에서 " ' x · 등으로 읽힘. 보내는분 근처 우선.
+      var name='';
+      var bm=text.match(/보내는?\s*분[\s:]*([가-힣]\s*[^가-힣\d\n]\s*[가-힣])/);
+      if(bm){ name=bm[1].replace(/\s/g,'').replace(/[^가-힣]/g,'*'); }
+      else { var nm=text.match(/[가-힣][^가-힣\d\s\n][가-힣]/); if(nm) name=nm[0].replace(/[^가-힣]/g,'*'); }
       var got=[];
       if(wb){ waybillInput.value=wb; state['_waybill']=wb; got.push('운송장 <b>'+esc(wb)+'</b>'); }
       if(name){ senderInput.value=name; state['_sender']=name; got.push('이름 <b>'+esc(name)+'</b>'); }
