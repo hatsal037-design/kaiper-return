@@ -117,12 +117,17 @@
   .name-box input:focus{outline:none;border-color:var(--accent);}
   .name-box button{width:100%;height:56px;background:#000000;color:#fff;border:none;border-radius:13px;font-size:18px;font-weight:800;cursor:pointer;}
   .sync{font-weight:700;} .sync.ok{color:#9aa3ad;} .sync.pend{color:#d98a00;}
-  .nrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
-  .ntag{font-size:13px;font-weight:700;color:var(--sub);}
-  .ncell{width:50px;font-size:20px;font-weight:700;text-align:center;padding:11px 0;border:none;background:#ededf5;border-radius:6px;}
-  .ncell.wide{width:96px;font-variant-numeric:tabular-nums;letter-spacing:3px;}
+  .nrow{display:flex;align-items:center;gap:6px;flex-wrap:nowrap;}
+  .ntag{font-size:12px;font-weight:700;color:var(--sub);white-space:nowrap;}
+  .ncell{flex:0 0 auto;width:42px;font-size:19px;font-weight:700;text-align:center;padding:11px 0;border:none;background:#ededf5;border-radius:6px;}
+  .ncell.wide{width:76px;font-variant-numeric:tabular-nums;letter-spacing:2px;font-size:17px;}
+  .ncell::placeholder{font-size:11px;letter-spacing:0;}
   .ncell:focus{outline:none;background:#e3e7f5;}
-  .nstar{font-size:22px;font-weight:800;color:#9097a0;}
+  .nstar{font-size:20px;font-weight:800;color:#9097a0;flex:0 0 auto;}
+  .writebanner{display:none;margin:16px;border-radius:14px;padding:18px 16px;text-align:center;color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.18);}
+  .writebanner.show{display:block;}
+  .writebanner .wb-cap{font-size:15px;font-weight:800;opacity:.97;}
+  .writebanner .wb-word{font-size:52px;font-weight:900;letter-spacing:3px;margin-top:6px;line-height:1.05;}
   .ocrbtn{width:100%;background:#0096c7;color:#fff;border:none;font-weight:800;font-size:15px;padding:14px;border-radius:9px;cursor:pointer;}
   .ocrbtn:active{transform:scale(.98);} .ocrbtn:disabled{opacity:.6;}
   .ocrstat{display:none;margin-top:9px;font-size:12.5px;border-radius:8px;padding:10px 12px;line-height:1.55;}
@@ -169,8 +174,8 @@
       <input id="senderFirst" class="ncell" maxlength="1" autocomplete="off" placeholder="성">
       <span class="nstar">*</span>
       <input id="senderLast" class="ncell" maxlength="1" autocomplete="off" placeholder="끝">
-      <span class="ntag" style="margin-left:16px">전화 가운데</span>
-      <input id="phoneMid" class="ncell wide" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="4자리">
+      <span class="ntag" style="margin-left:18px">전화</span>
+      <input id="phoneMid" class="ncell wide" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="가운데 4자리">
     </div>
     <div class="hint">이름은 <b>성·끝 글자</b>만 (김*서 → 김 · 서), 전화는 <b>가운데 4자리</b>만 (010-<b>4334</b>-****).</div>
   </div>
@@ -233,6 +238,8 @@
     <textarea id="memoInput" rows="3" placeholder="불량 증상·파손 위치·구성품 누락 내역 등 (기록·엑셀에 함께 저장)"></textarea>
   </div>
 
+  <div class="writebanner" id="writeBanner"></div>
+
 </main>
 
 <div class="toolbar">
@@ -285,6 +292,8 @@
   var KEY='kaiper_ret_v1';
   var FIELDS=[].slice.call(document.querySelectorAll('.field'));
   var DISPOS=['재판매','리퍼','수리테스트','폐기'];
+  var DISPO_COLOR={'재판매':'#15a83c','리퍼':'#0096c7','수리테스트':'#e8820e','폐기':'#ee3a4d'};
+  var DISPO_EMOJI={'재판매':'♻️','리퍼':'🔧','수리테스트':'🩹','폐기':'🗑️'};
   var state={};
   try{ state=JSON.parse(localStorage.getItem(KEY))||{}; }catch(e){ state={}; }
   function save(){ try{ localStorage.setItem(KEY,JSON.stringify(state)); }catch(e){} }
@@ -301,6 +310,10 @@
     var dh=document.getElementById('dispoHint'); if(dh){ var rec=recommendDispo();
       dh.textContent = rec ? ('🤖 자동추천: '+rec+(state['dispo']&&state['dispo']!==rec?' (지금 '+state['dispo']+' 선택됨)':'')+' · 다르면 직접 누르세요')
         : '외관·작동·패키지를 고르면 처분이 자동 추천돼요'; }
+    var wbn=document.getElementById('writeBanner'); if(wbn){ var dp=state['dispo'];
+      if(dp){ wbn.className='writebanner show'; wbn.style.background=DISPO_COLOR[dp]||'#16181d';
+        wbn.innerHTML='<div class="wb-cap">✍️ 운송장 위에 매직으로 크게 적기</div><div class="wb-word">'+(DISPO_EMOJI[dp]||'')+' '+dp+'</div>'; }
+      else { wbn.className='writebanner'; wbn.innerHTML=''; } }
   }
   function recommendDispo(){
     var a=state['appearance'], w=state['working'], p=state['pkg'];
