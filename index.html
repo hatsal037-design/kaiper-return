@@ -144,8 +144,17 @@
       <input id="waybillInput" type="text" inputmode="text" autocomplete="off" placeholder="택배 운송장 바코드 스캔/입력">
       <button class="scanbtn" data-target="waybillInput">📷 스캔</button>
     </div>
-    <div class="hint">반송 송장의 <b>운송장번호 바코드</b>를 찍으면 — <b>상품명·배송상태</b>가 자동 조회돼요(CJ). 보내는분 이름은 택배사가 안 줘요. · <span style="text-decoration:underline;cursor:pointer;font-weight:700" onclick="setTrackKey()">🔑 택배조회 키 설정</span></div>
+    <div class="hint">반송 송장의 <b>운송장번호 바코드</b>를 찍으면 — <b>발송지·집화시각</b>이 자동 조회돼요(고객마다 달라 반품 변별 단서). · <span style="text-decoration:underline;cursor:pointer;font-weight:700" onclick="setTrackKey()">🔑 택배조회 키 설정</span></div>
     <div id="trackResult" class="track"></div>
+  </div>
+
+  <div class="serial">
+    <label>보내는분 (송장에서 · 변별용 · 선택)</label>
+    <div class="srow">
+      <input id="senderInput" type="text" autocomplete="off" placeholder="이름 일부 (예: 김*서)">
+      <input id="phoneInput" type="text" inputmode="tel" autocomplete="off" placeholder="전화 일부 (예: 4334)">
+    </div>
+    <div class="hint">송장의 <b>보내는분 이름·전화 일부</b>를 적어두면 같은 제품끼리 변별돼요. 아이폰 키보드 <b>텍스트 스캔(📷)</b>으로 송장 글자를 바로 입력하면 빨라요.</div>
   </div>
 
   <div class="serial">
@@ -282,10 +291,14 @@
   });
 
   var waybillInput=document.getElementById('waybillInput'), serialInput=document.getElementById('serialInput'), memoInput=document.getElementById('memoInput');
+  var senderInput=document.getElementById('senderInput'), phoneInput=document.getElementById('phoneInput');
   waybillInput.value=state['_waybill']||''; serialInput.value=state['_serial']||''; memoInput.value=state['_memo']||'';
+  senderInput.value=state['_sender']||''; phoneInput.value=state['_phone']||'';
   waybillInput.addEventListener('input',function(){ state['_waybill']=waybillInput.value; save(); });
   serialInput.addEventListener('input',function(){ state['_serial']=serialInput.value; save(); });
   memoInput.addEventListener('input',function(){ state['_memo']=memoInput.value; save(); });
+  senderInput.addEventListener('input',function(){ state['_sender']=senderInput.value; save(); });
+  phoneInput.addEventListener('input',function(){ state['_phone']=phoneInput.value; save(); });
 
   // 택배 조회 (스윗트래커 통합 API · CJ=04) — 키는 코드에 박지 않고 이 기기(localStorage)에만 저장
   var TKEY='kaiper_ret_trackkey', TRACK_KEY=localStorage.getItem(TKEY)||'', TRACK_CODE='04';
@@ -295,16 +308,16 @@
   window.setTrackKey=setTrackKey;
   function lookupTracking(inv){
     inv=(''+(inv||'')).replace(/[^0-9]/g,'');
-    state['_item']=''; state['_delivery']='';
+    state['_item']=''; state['_origin']='';
     if(inv.length<8){ trackEl.className='track'; trackEl.innerHTML=''; return; }
     if(!TRACK_KEY){ setTrack('fail','🔑 택배조회 키 미설정 — <span style="text-decoration:underline;cursor:pointer;font-weight:800" onclick="setTrackKey()">키 설정하기</span>'); return; }
     setTrack('loading','🔍 택배 조회 중…');
     fetch('https://info.sweettracker.co.kr/api/v1/trackingInfo?t_key='+TRACK_KEY+'&t_code='+TRACK_CODE+'&t_invoice='+inv)
       .then(function(r){ return r.json(); }).then(function(d){
         if(!d || d.status===false || d.result!=='Y'){ setTrack('fail','⚠️ 택배 조회 결과 없음'+(d&&d.msg?' ('+esc(d.msg)+')':'')); return; }
-        var item=d.itemName||'', ls=d.lastStateDetail||{}, kind=ls.kind||'', where=ls.where||'', t=ls.timeString||'', done=!!d.complete;
-        state['_item']=item; state['_delivery']=(done?'배송완료':kind)+(where?' / '+where:'')+(t?' / '+t:''); save();
-        setTrack('ok','<div class="ti">📦 '+(esc(item)||'(상품명 없음)')+'</div><div class="ts"><span class="'+(done?'done':'moving')+'">'+(done?'✅ 배송완료':('🚚 '+esc(kind||'배송중')))+'</span>'+(where?' · '+esc(where):'')+(t?' · '+esc(t):'')+'</div>');
+        var item=d.itemName||'', fd=d.firstDetail||{}, origin=fd.where||'', otime=fd.timeString||'', otel=fd.telno||'';
+        state['_item']=item; state['_origin']=origin+(otime?' / '+otime:'')+(otel?' / '+otel:''); save();
+        setTrack('ok','<div class="ti">📦 '+(esc(item)||'(상품명)')+'</div><div class="ts">🚩 발송 <b>'+(esc(origin)||'?')+'</b>'+(otime?' · '+esc(otime):'')+(otel?' · ☎'+esc(otel):'')+'</div><div class="ts" style="color:#9aa3ad;font-size:11px;margin-top:3px">↑ 발송지·시각 = 반품 변별 단서 (고객마다 다름)</div>');
       }).catch(function(){ setTrack('fail','⚠️ 조회 실패 (인터넷 확인)'); });
   }
   waybillInput.addEventListener('change',function(){ lookupTracking(waybillInput.value); });
@@ -400,11 +413,11 @@
     var d=new Date();
     var dt=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes());
     var rec={id:uid(), inspector:inspector, waybill:waybill, serial:serial, dt:dt,
-      item:(state['_item']||''), delivery:(state['_delivery']||''),
+      item:(state['_item']||''), origin:(state['_origin']||''), sender:(state['_sender']||'').trim(), phone:(state['_phone']||'').trim(),
       reason:state['reason']||'', working:state['working']||'', pkg:state['pkg']||'', dispo:state['dispo']||'', memo:(state['_memo']||'').trim()};
     records.push(rec); saveRecords();
     pending.push(rec); savePending(); flushPending();
-    state={}; save(); render(); waybillInput.value=''; serialInput.value=''; memoInput.value='';
+    state={}; save(); render(); waybillInput.value=''; serialInput.value=''; memoInput.value=''; senderInput.value=''; phoneInput.value='';
     trackEl.className='track'; trackEl.innerHTML='';
     window.scrollTo({top:0,behavior:'smooth'});
     toast('✓ 저장됨 ['+rec.dispo+'] · 총 '+dedup(records).length+'건');
@@ -431,7 +444,7 @@
     list.forEach(function(r){
       h+='<div class="rec-row">'
         +'<div class="rec-top"><b>'+(esc(r.serial)||'(시리얼 없음)')+'</b><span class="dchip d'+esc(r.dispo)+'">'+esc(r.dispo||'-')+'</span></div>'
-        +'<div class="rec-meta">'+(r.item?'<span class="k">상품</span> '+esc(r.item)+'<br>':'')+(r.delivery?'<span class="k">배송</span> '+esc(r.delivery)+'<br>':'')+'<span class="k">운송장</span> '+esc(r.waybill||'-')+' · <span class="k">사유</span> '+esc(r.reason||'-')+'<br><span class="k">작동</span> '+esc(r.working||'-')+' · <span class="k">패키지</span> '+esc(r.pkg||'-')+'<br>'+esc(r.dt||'')+(r.inspector?' · '+esc(r.inspector):'')+'</div>'
+        +'<div class="rec-meta">'+(r.item?'<span class="k">상품</span> '+esc(r.item)+'<br>':'')+((r.origin||r.delivery)?'<span class="k">🚩발송</span> '+esc(r.origin||r.delivery)+'<br>':'')+((r.sender||r.phone)?'<span class="k">보내는분</span> '+esc(r.sender||'')+(r.phone?' ('+esc(r.phone)+')':'')+'<br>':'')+'<span class="k">운송장</span> '+esc(r.waybill||'-')+' · <span class="k">사유</span> '+esc(r.reason||'-')+'<br><span class="k">작동</span> '+esc(r.working||'-')+' · <span class="k">패키지</span> '+esc(r.pkg||'-')+'<br>'+esc(r.dt||'')+(r.inspector?' · '+esc(r.inspector):'')+'</div>'
         +(r.memo?'<div class="rec-memo">'+esc(r.memo)+'</div>':'')
         +(local?'<div class="rec-foot"><button class="rec-del" data-id="'+esc(r.id||'')+'">삭제</button></div>':'')
         +'</div>';
@@ -464,8 +477,8 @@
   document.getElementById('exportBtn').addEventListener('click',function(){
     var all=dedup(curList()); var list=filterDispo? all.filter(function(r){ return r.dispo===filterDispo; }) : all;
     if(!list.length){ toast('내보낼 기록이 없어요'); return; }
-    var rows=[['번호','검수자','운송장번호','시리얼','상품명','배송상태','검수일시','반품사유','작동상태','패키지상태','처분','비고']];
-    list.forEach(function(r,i){ rows.push([i+1, r.inspector||'', r.waybill||'', r.serial||'', r.item||'', r.delivery||'', r.dt||'', r.reason||'', r.working||'', r.pkg||'', r.dispo||'', r.memo||'']); });
+    var rows=[['번호','검수자','운송장번호','시리얼','상품명','발송지(집화)','보내는분','전화일부','검수일시','반품사유','작동상태','패키지상태','처분','비고']];
+    list.forEach(function(r,i){ rows.push([i+1, r.inspector||'', r.waybill||'', r.serial||'', r.item||'', r.origin||r.delivery||'', r.sender||'', r.phone||'', r.dt||'', r.reason||'', r.working||'', r.pkg||'', r.dispo||'', r.memo||'']); });
     var csv=rows.map(function(row){ return row.map(function(c){ c=(''+c).replace(/"/g,'""'); return /[",\n\r]/.test(c)?'"'+c+'"':c; }).join(','); }).join('\r\n');
     var blob=new Blob([String.fromCharCode(0xFEFF)+csv],{type:'text/csv;charset=utf-8;'});
     var d=new Date(), tag=(viewMode==='cloud'?'합본':'이기기')+(filterDispo?'_'+filterDispo:'');
