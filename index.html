@@ -418,10 +418,13 @@
   try{ records=JSON.parse(localStorage.getItem(RKEY))||[]; }catch(e){ records=[]; }
   try{ pending=JSON.parse(localStorage.getItem(PKEY))||[]; }catch(e){ pending=[]; }
   var bydt=function(a,b){ var x=a.dt||'',y=b.dt||''; return x<y?1:(x>y?-1:0); }; // 최신 먼저
-  function dedup(list){ // 같은 시리얼 최신 1건만(시리얼 없으면 전부 유지)
+  function dedup(list){ // 같은 시리얼: 최신건은 그대로, 과거 중복건은 '폐기'로 자동 표기(유지)
     var sorted=list.slice().sort(function(a,b){ var x=a.dt||'',y=b.dt||''; return x<y?-1:(x>y?1:0); }), latestBy={};
     sorted.forEach(function(r){ var s=(r.serial||'').trim(); if(s) latestBy[s]=r; });
-    return list.filter(function(r){ var s=(r.serial||'').trim(); return !s || latestBy[s]===r; }).sort(bydt);
+    return list.map(function(r){ var s=(r.serial||'').trim();
+      if(s && latestBy[s]!==r){ var c={}; for(var k in r) c[k]=r[k]; c.dispo='폐기'; c._superseded=true; return c; }
+      return r;
+    }).sort(bydt);
   }
   function updateSync(){ var el=document.getElementById('syncStat'); if(!el) return;
     el.textContent = pending.length ? ('⟳ 미전송 '+pending.length) : '☁ 동기화됨';
@@ -476,7 +479,7 @@
     var h='';
     list.forEach(function(r){
       h+='<div class="rec-row">'
-        +'<div class="rec-top"><b>'+(esc(r.serial)||'(시리얼 없음)')+'</b><span class="dchip d'+esc(r.dispo)+'">'+esc(r.dispo||'-')+'</span></div>'
+        +'<div class="rec-top"><b>'+(esc(r.serial)||'(시리얼 없음)')+'</b><span class="dchip d'+esc(r.dispo)+'">'+esc(r.dispo||'-')+'</span>'+(r._superseded?'<span class="dchip" style="background:#9097a0">중복·과거</span>':'')+'</div>'
         +'<div class="rec-meta">'+((r.sender||r.phone)?'<span class="k">보내는분</span> '+esc(r.sender||'')+(r.phone?' ('+esc(r.phone)+')':'')+'<br>':'')+'<span class="k">운송장</span> '+esc(r.waybill||'-')+' · <span class="k">외관</span> '+esc(r.appearance||r.reason||'-')+'<br><span class="k">작동</span> '+esc(r.working||'-')+' · <span class="k">패키지</span> '+esc(r.pkg||'-')+'<br>'+esc(r.dt||'')+(r.inspector?' · '+esc(r.inspector):'')+'</div>'
         +(r.memo?'<div class="rec-memo">'+esc(r.memo)+'</div>':'')
         +(local?'<div class="rec-foot"><button class="rec-del" data-id="'+esc(r.id||'')+'">삭제</button></div>':'')
@@ -511,7 +514,7 @@
     var all=dedup(curList()); var list=filterDispo? all.filter(function(r){ return r.dispo===filterDispo; }) : all;
     if(!list.length){ toast('내보낼 기록이 없어요'); return; }
     var rows=[['번호','검수자','운송장번호','시리얼','보내는분','전화일부','검수일시','제품외관','작동상태','패키지상태','처분','비고']];
-    list.forEach(function(r,i){ rows.push([i+1, r.inspector||'', r.waybill||'', r.serial||'', r.sender||'', r.phone||'', r.dt||'', r.appearance||r.reason||'', r.working||'', r.pkg||'', r.dispo||'', r.memo||'']); });
+    list.forEach(function(r,i){ rows.push([i+1, r.inspector||'', r.waybill||'', r.serial||'', r.sender||'', r.phone||'', r.dt||'', r.appearance||r.reason||'', r.working||'', r.pkg||'', r.dispo||'', (r._superseded?'[중복 시리얼·과거건→폐기] ':'')+(r.memo||'')]); });
     var csv=rows.map(function(row){ return row.map(function(c){ c=(''+c).replace(/"/g,'""'); return /[",\n\r]/.test(c)?'"'+c+'"':c; }).join(','); }).join('\r\n');
     var blob=new Blob([String.fromCharCode(0xFEFF)+csv],{type:'text/csv;charset=utf-8;'});
     var d=new Date(), tag=(viewMode==='cloud'?'합본':'이기기')+(filterDispo?'_'+filterDispo:'');
