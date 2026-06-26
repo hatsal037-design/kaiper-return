@@ -516,7 +516,7 @@
     var list=filterDispo? all.filter(function(r){ return r.dispo===filterDispo; }) : nonScrap;
     if(filterMD){ list=all.filter(function(r){ return !r._superseded && r.dispo!=='무효' && !r.mdChecked; }); }
     var local=(viewMode==='local');
-    document.getElementById('clearRecBtn').style.display=local?'':'none';
+    var crb=document.getElementById('clearRecBtn'); crb.style.display=''; crb.textContent=local?'🗑 이 기기 전부삭제':'🗑 합본 전체삭제';
     if(!list.length){ document.getElementById('recList').innerHTML='<div class="rec-empty">'+(viewMode==='cloud'?'합본 데이터가 없어요.':'아직 검수 기록이 없어요.')+'</div>'; return; }
     var h='';
     list.forEach(function(r){
@@ -525,7 +525,7 @@
         +'<div class="rec-meta">'+((r.sender||r.phone)?'<span class="k">보내는분</span> '+esc(r.sender||'')+(r.phone?' ('+esc(r.phone)+')':'')+'<br>':'')+'<span class="k">운송장</span> '+esc(r.waybill||'-')+' · <span class="k">외관</span> '+esc(r.appearance||r.reason||'-')+'<br><span class="k">작동</span> '+esc(r.working||'-')+' · <span class="k">패키지</span> '+esc(r.pkg||'-')+'<br>'+esc(r.dt||'')+(r.inspector?' · '+esc(r.inspector):'')+'</div>'
         +(r.memo?'<div class="rec-memo">'+esc(r.memo)+'</div>':'')
         +((!r._superseded&&r.dispo!=='무효')?'<div class="rec-md"><button class="md-chk'+(r.mdChecked?' on':'')+'" data-id="'+esc(r.id||'')+'">'+(r.mdChecked?('✅ MD 확인 완료'+(r.mdAt?' · '+esc(r.mdAt):'')+(r.mdBy?' · '+esc(r.mdBy):'')):'☐ MD 최종확인 (반품 처리)')+'</button></div>':'')
-        +(local?'<div class="rec-foot">'+((!r._superseded&&r.dispo!=='무효')?'<button class="rec-void" data-id="'+esc(r.id||'')+'">⛔ 무효</button>':'')+'<button class="rec-del" data-id="'+esc(r.id||'')+'">삭제</button></div>':'')
+        +'<div class="rec-foot">'+((!r._superseded&&r.dispo!=='무효')?'<button class="rec-void" data-id="'+esc(r.id||'')+'">⛔ 무효</button>':'')+'<button class="rec-del" data-id="'+esc(r.id||'')+'">🗑 삭제</button></div>'
         +'</div>';
     });
     document.getElementById('recList').innerHTML=h;
@@ -559,14 +559,30 @@
   document.getElementById('tabCloud').addEventListener('click',function(){ setTab('cloud'); });
   document.getElementById('recList').addEventListener('click',function(e){ var b=e.target.closest('.rec-del'); if(!b) return;
     var id=b.getAttribute('data-id');
-    if(confirm('이 기록을 삭제할까요? (이 기기 목록만, 합본은 유지)')){ records=records.filter(function(r){ return r.id!==id; }); saveRecords(); renderRecords(); } });
+    if(confirm('이 기록을 삭제할까요?\n합본(클라우드)·이 기기 모두에서 영구 삭제됩니다.')){
+      fetch(CLOUD+'/'+id,{method:'DELETE'}).catch(function(){});
+      records=records.filter(function(r){ return r.id!==id; });
+      cloudRecords=cloudRecords.filter(function(r){ return r.id!==id; });
+      pending=pending.filter(function(r){ return r.id!==id; }); savePending();
+      saveRecords(); renderRecords(); toast('🗑 삭제됨 (합본 포함)'); } });
   document.getElementById('recList').addEventListener('click',function(e){ var v=e.target.closest('.rec-void'); if(!v) return;
     var id=v.getAttribute('data-id');
     if(confirm('이 기록을 ⛔무효 처리할까요?\n(오입력·중복 등 — 실제 폐기와 별도로 분류돼요)')){
-      var rec=null; records.forEach(function(r){ if(r.id===id){ r.dispo='무효'; rec=r; } });
-      if(rec){ saveRecords(); pending.push(rec); savePending(); flushPending(); renderRecords(); toast('⛔ 무효 처리됨'); } } });
-  document.getElementById('clearRecBtn').addEventListener('click',function(){ if(!records.length) return;
-    if(confirm('이 기기 '+records.length+'건을 전부 삭제할까요? (합본 클라우드는 유지)')){ records=[]; saveRecords(); renderRecords(); } });
+      var rec=null; function updv(arr){ arr.forEach(function(r){ if(r.id===id){ r.dispo='무효'; rec=r; } }); }
+      updv(records); updv(cloudRecords);
+      if(rec){ saveRecords(); fetch(CLOUD+'/'+id,{method:'POST',body:JSON.stringify(rec)}).catch(function(){}); renderRecords(); toast('⛔ 무효 처리됨'); } } });
+  document.getElementById('clearRecBtn').addEventListener('click',function(){
+    if(viewMode==='cloud'){
+      if(!cloudRecords.length){ toast('합본이 비어있어요'); return; }
+      if(confirm('합본(클라우드) 전체 '+cloudRecords.length+'건을 영구 삭제할까요?\n⚠️ 모든 기기·검수자가 공유하는 데이터가 사라집니다.')){
+        var ids=cloudRecords.map(function(r){ return r.id; });
+        ids.forEach(function(id){ if(id) fetch(CLOUD+'/'+id,{method:'DELETE'}).catch(function(){}); });
+        cloudRecords=[]; records=records.filter(function(r){ return ids.indexOf(r.id)<0; });
+        pending=pending.filter(function(r){ return ids.indexOf(r.id)<0; }); savePending();
+        saveRecords(); renderRecords(); toast('🗑 합본 전체 삭제됨'); }
+    } else {
+      if(!records.length) return;
+      if(confirm('이 기기 '+records.length+'건을 전부 삭제할까요? (합본 클라우드는 유지)')){ records=[]; saveRecords(); renderRecords(); } } });
 
   document.getElementById('exportBtn').addEventListener('click',function(){
     var all=dedup(curList()); var list=filterDispo? all.filter(function(r){ return r.dispo===filterDispo; }) : all.filter(function(r){ return r.dispo!=='폐기' && r.dispo!=='무효'; });
