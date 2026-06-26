@@ -96,6 +96,12 @@
   .schip.void{background:#f1f2f4;border-color:#d4d9e0;color:#6b7280;}
   .schip.void.on{background:#9097a0;color:#fff;border-color:#9097a0;}
   .rec-void{background:none;border:none;color:#7b8190;font-size:12px;font-weight:700;cursor:pointer;margin-right:14px;}
+  .rec-md{margin-top:8px;}
+  .md-chk{width:100%;padding:10px;border-radius:8px;border:1.5px solid var(--line);background:#fff;color:#555;font-size:13px;font-weight:800;cursor:pointer;}
+  .md-chk.on{background:#eafaf0;border-color:#15a83c;color:#137a35;}
+  .mdstat{font-size:12px;font-weight:800;color:var(--sub);align-self:center;}
+  .mdf{font-size:12px;font-weight:800;padding:6px 10px;border-radius:8px;border:1.5px solid #ffd8a8;background:#fff4e6;color:#d9480f;cursor:pointer;}
+  .mdf.on{background:#d9480f;color:#fff;border-color:#d9480f;}
   .rec-actions{display:flex;gap:10px;padding:8px 12px;}
   .rec-act{height:48px;border:none;border-radius:6px;font-weight:800;font-size:15px;cursor:pointer;}
   .rec-act.primary{flex:1;background:var(--accent);color:#fff;}
@@ -442,7 +448,7 @@
   // 기록 + 클라우드 (입고QC와 같은 버킷, 키 prefix는 ret_ 로 분리)
   var CLOUD='https://kvdb.io/3YEp7XsuxXVRThbAnD6skw';
   var RKEY='kaiper_ret_records', PKEY='kaiper_ret_pending';
-  var records=[], pending=[], cloudRecords=[], viewMode='local', filterDispo='';
+  var records=[], pending=[], cloudRecords=[], viewMode='local', filterDispo='', filterMD=false;
   try{ records=JSON.parse(localStorage.getItem(RKEY))||[]; }catch(e){ records=[]; }
   try{ pending=JSON.parse(localStorage.getItem(PKEY))||[]; }catch(e){ pending=[]; }
   var bydt=function(a,b){ var x=a.dt||'',y=b.dt||''; return x<y?1:(x>y?-1:0); }; // 최신 먼저
@@ -502,8 +508,13 @@
     ['재판매','리퍼','수리테스트'].forEach(function(d){ sh+='<span class="schip'+(filterDispo===d?' on':'')+'" data-d="'+d+'">'+d+' <b>'+cnt[d]+'</b></span>'; });
     sh+='<span class="schip-sep"></span><span class="schip scrap'+(filterDispo==='폐기'?' on':'')+'" data-d="폐기">🗑️ 폐기 <b>'+cnt['폐기']+'</b></span>';
     sh+='<span class="schip void'+(filterDispo==='무효'?' on':'')+'" data-d="무효">⛔ 무효 <b>'+cnt['무효']+'</b></span>';
+    var mdElig=all.filter(function(r){ return !r._superseded && r.dispo!=='무효'; });
+    var mdDone=mdElig.filter(function(r){ return r.mdChecked; }).length, mdPend=mdElig.length-mdDone;
+    sh+='<span class="schip-sep"></span><span class="mdstat">🧾 MD 최종확인 <b style="color:#137a35">'+mdDone+'</b> / '+mdElig.length+'</span>';
+    sh+='<span class="mdf'+(filterMD?' on':'')+'" data-md="1">⏳ 미확인 '+mdPend+'건만</span>';
     document.getElementById('summary').innerHTML=sh;
     var list=filterDispo? all.filter(function(r){ return r.dispo===filterDispo; }) : nonScrap;
+    if(filterMD){ list=all.filter(function(r){ return !r._superseded && r.dispo!=='무효' && !r.mdChecked; }); }
     var local=(viewMode==='local');
     document.getElementById('clearRecBtn').style.display=local?'':'none';
     if(!list.length){ document.getElementById('recList').innerHTML='<div class="rec-empty">'+(viewMode==='cloud'?'합본 데이터가 없어요.':'아직 검수 기록이 없어요.')+'</div>'; return; }
@@ -513,14 +524,25 @@
         +'<div class="rec-top"><b>'+(esc(r.serial)||'(시리얼 없음)')+'</b><span class="dchip d'+esc(r.dispo)+'">'+esc(r.dispo||'-')+'</span>'+(r._superseded?'<span class="dchip" style="background:#b9bdc6">중복</span>':'')+'</div>'
         +'<div class="rec-meta">'+((r.sender||r.phone)?'<span class="k">보내는분</span> '+esc(r.sender||'')+(r.phone?' ('+esc(r.phone)+')':'')+'<br>':'')+'<span class="k">운송장</span> '+esc(r.waybill||'-')+' · <span class="k">외관</span> '+esc(r.appearance||r.reason||'-')+'<br><span class="k">작동</span> '+esc(r.working||'-')+' · <span class="k">패키지</span> '+esc(r.pkg||'-')+'<br>'+esc(r.dt||'')+(r.inspector?' · '+esc(r.inspector):'')+'</div>'
         +(r.memo?'<div class="rec-memo">'+esc(r.memo)+'</div>':'')
+        +((!r._superseded&&r.dispo!=='무효')?'<div class="rec-md"><button class="md-chk'+(r.mdChecked?' on':'')+'" data-id="'+esc(r.id||'')+'">'+(r.mdChecked?('✅ MD 확인 완료'+(r.mdAt?' · '+esc(r.mdAt):'')+(r.mdBy?' · '+esc(r.mdBy):'')):'☐ MD 최종확인 (반품 처리)')+'</button></div>':'')
         +(local?'<div class="rec-foot">'+((!r._superseded&&r.dispo!=='무효')?'<button class="rec-void" data-id="'+esc(r.id||'')+'">⛔ 무효</button>':'')+'<button class="rec-del" data-id="'+esc(r.id||'')+'">삭제</button></div>':'')
         +'</div>';
     });
     document.getElementById('recList').innerHTML=h;
   }
-  document.getElementById('summary').addEventListener('click',function(e){ var c=e.target.closest('.schip'); if(!c) return; filterDispo=c.getAttribute('data-d'); renderRecords(); });
+  document.getElementById('summary').addEventListener('click',function(e){
+    var m=e.target.closest('.mdf'); if(m){ filterMD=!filterMD; renderRecords(); return; }
+    var c=e.target.closest('.schip'); if(!c) return; filterDispo=c.getAttribute('data-d')||''; filterMD=false; renderRecords(); });
+  document.getElementById('recList').addEventListener('click',function(e){ var m=e.target.closest('.md-chk'); if(!m) return;
+    var id=m.getAttribute('data-id'), on=!m.classList.contains('on');
+    var d=new Date(), now=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes());
+    function upd(arr){ arr.forEach(function(r){ if(r.id===id){ r.mdChecked=on; r.mdAt=on?now:''; r.mdBy=on?inspector:''; } }); }
+    upd(cloudRecords); upd(records); saveRecords();
+    var rec=null; cloudRecords.forEach(function(r){ if(r.id===id) rec=r; }); if(!rec) records.forEach(function(r){ if(r.id===id) rec=r; });
+    if(rec){ fetch(CLOUD+'/'+id,{method:'POST',body:JSON.stringify(rec)}).catch(function(){}); }
+    renderRecords(); toast(on?'✅ MD 확인 완료 — 반품 처리':'☐ MD 확인 취소'); });
   function setTab(mode){
-    viewMode=mode; filterDispo='';
+    viewMode=mode; filterDispo=''; filterMD=false;
     document.getElementById('tabLocal').classList.toggle('active',mode==='local');
     document.getElementById('tabCloud').classList.toggle('active',mode==='cloud');
     if(mode==='cloud'){
@@ -549,8 +571,8 @@
   document.getElementById('exportBtn').addEventListener('click',function(){
     var all=dedup(curList()); var list=filterDispo? all.filter(function(r){ return r.dispo===filterDispo; }) : all.filter(function(r){ return r.dispo!=='폐기' && r.dispo!=='무효'; });
     if(!list.length){ toast('내보낼 기록이 없어요'); return; }
-    var rows=[['번호','검수자','운송장번호','시리얼','보내는분','전화일부','검수일시','제품외관','작동상태','패키지상태','처분','비고']];
-    list.forEach(function(r,i){ rows.push([i+1, r.inspector||'', r.waybill||'', r.serial||'', r.sender||'', r.phone||'', r.dt||'', r.appearance||r.reason||'', r.working||'', r.pkg||'', r.dispo||'', (r._superseded?'[중복→무효] ':'')+(r.memo||'')]); });
+    var rows=[['번호','검수자','운송장번호','시리얼','보내는분','전화일부','검수일시','제품외관','작동상태','패키지상태','처분','MD최종확인','MD확인시각','MD확인자','비고']];
+    list.forEach(function(r,i){ rows.push([i+1, r.inspector||'', r.waybill||'', r.serial||'', r.sender||'', r.phone||'', r.dt||'', r.appearance||r.reason||'', r.working||'', r.pkg||'', r.dispo||'', (r.mdChecked?'확인':'미확인'), r.mdAt||'', r.mdBy||'', (r._superseded?'[중복→무효] ':'')+(r.memo||'')]); });
     var csv=rows.map(function(row){ return row.map(function(c){ c=(''+c).replace(/"/g,'""'); return /[",\n\r]/.test(c)?'"'+c+'"':c; }).join(','); }).join('\r\n');
     var blob=new Blob([String.fromCharCode(0xFEFF)+csv],{type:'text/csv;charset=utf-8;'});
     var d=new Date(), tag=(viewMode==='cloud'?'합본':'이기기')+(filterDispo?'_'+filterDispo:'');
