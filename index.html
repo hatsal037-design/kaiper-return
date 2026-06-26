@@ -90,6 +90,9 @@
   .schip-sep{flex-basis:100%;height:1px;background:var(--hair);margin:4px 0 2px;}
   .schip.scrap{background:#fff0f1;border-color:#ffc9ce;color:#c81e2c;}
   .schip.scrap.on{background:var(--ng);color:#fff;border-color:var(--ng);}
+  .schip.void{background:#f1f2f4;border-color:#d4d9e0;color:#6b7280;}
+  .schip.void.on{background:#9097a0;color:#fff;border-color:#9097a0;}
+  .rec-void{background:none;border:none;color:#7b8190;font-size:12px;font-weight:700;cursor:pointer;margin-right:14px;}
   .rec-actions{display:flex;gap:10px;padding:8px 12px;}
   .rec-act{height:48px;border:none;border-radius:6px;font-weight:800;font-size:15px;cursor:pointer;}
   .rec-act.primary{flex:1;background:var(--accent);color:#fff;}
@@ -101,7 +104,7 @@
   .rec-top{display:flex;justify-content:space-between;align-items:center;gap:8px;}
   .rec-top b{font-size:15px;font-variant-numeric:tabular-nums;}
   .dchip{font-size:12px;font-weight:800;padding:3px 9px;border-radius:7px;white-space:nowrap;color:#fff;}
-  .d재판매{background:var(--ok);} .d리퍼{background:var(--accent);} .d수리테스트{background:#e8820e;} .d폐기{background:var(--ng);}
+  .d재판매{background:var(--ok);} .d리퍼{background:var(--accent);} .d수리테스트{background:#e8820e;} .d폐기{background:var(--ng);} .d무효{background:#9097a0;}
   .rec-meta{font-size:12px;color:var(--sub);margin-top:5px;line-height:1.5;}
   .rec-meta .k{color:#9aa3ad;}
   .rec-memo{font-size:13px;color:#444;margin-top:5px;background:#f7f8fa;border-radius:7px;padding:6px 8px;white-space:pre-wrap;}
@@ -303,7 +306,7 @@
   var KEY='kaiper_ret_v1';
   var FIELDS=[].slice.call(document.querySelectorAll('.field'));
   var DISPOS=['재판매','리퍼','수리테스트','폐기'];
-  var DISPO_COLOR={'재판매':'#15a83c','리퍼':'#0096c7','수리테스트':'#e8820e','폐기':'#ee3a4d'};
+  var DISPO_COLOR={'재판매':'#15a83c','리퍼':'#0096c7','수리테스트':'#e8820e','폐기':'#ee3a4d','무효':'#9097a0'};
   var DISPO_EMOJI={'재판매':'♻️','리퍼':'🔧','수리테스트':'🩹','폐기':'🗑️'};
   (function(){ var eg=document.getElementById('exGuide'); if(eg) setTimeout(function(){
     var imgs=Object.keys(DISPO_IMG).map(function(k){return '<figure><img src="'+DISPO_IMG[k]+'"><figcaption>'+k+' 예시</figcaption></figure>';}).join('');
@@ -425,7 +428,7 @@
     var sorted=list.slice().sort(function(a,b){ var x=a.dt||'',y=b.dt||''; return x<y?-1:(x>y?1:0); }), latestBy={};
     sorted.forEach(function(r){ var s=(r.serial||'').trim(); if(s) latestBy[s]=r; });
     return list.map(function(r){ var s=(r.serial||'').trim();
-      if(s && latestBy[s]!==r){ var c={}; for(var k in r) c[k]=r[k]; c.dispo='폐기'; c._superseded=true; return c; }
+      if(s && latestBy[s]!==r){ var c={}; for(var k in r) c[k]=r[k]; c.dispo='무효'; c._superseded=true; return c; }
       return r;
     }).sort(bydt);
   }
@@ -470,12 +473,13 @@
     var all=dedup(curList());
     document.getElementById('tabLocal').querySelector('em').textContent=dedup(records).length;
     // 처분별 집계 칩
-    var cnt={}; DISPOS.forEach(function(d){ cnt[d]=0; });
+    var cnt={}; DISPOS.forEach(function(d){ cnt[d]=0; }); cnt['무효']=0;
     all.forEach(function(r){ if(cnt[r.dispo]!=null) cnt[r.dispo]++; });
-    var nonScrap=all.filter(function(r){ return r.dispo!=='폐기'; });
+    var nonScrap=all.filter(function(r){ return r.dispo!=='폐기' && r.dispo!=='무효'; });
     var sh='<span class="schip'+(filterDispo===''?' on':'')+'" data-d="">전체 <b>'+nonScrap.length+'</b></span>';
     ['재판매','리퍼','수리테스트'].forEach(function(d){ sh+='<span class="schip'+(filterDispo===d?' on':'')+'" data-d="'+d+'">'+d+' <b>'+cnt[d]+'</b></span>'; });
     sh+='<span class="schip-sep"></span><span class="schip scrap'+(filterDispo==='폐기'?' on':'')+'" data-d="폐기">🗑️ 폐기 <b>'+cnt['폐기']+'</b></span>';
+    sh+='<span class="schip void'+(filterDispo==='무효'?' on':'')+'" data-d="무효">⛔ 무효 <b>'+cnt['무효']+'</b></span>';
     document.getElementById('summary').innerHTML=sh;
     var list=filterDispo? all.filter(function(r){ return r.dispo===filterDispo; }) : nonScrap;
     var local=(viewMode==='local');
@@ -484,10 +488,10 @@
     var h='';
     list.forEach(function(r){
       h+='<div class="rec-row">'
-        +'<div class="rec-top"><b>'+(esc(r.serial)||'(시리얼 없음)')+'</b><span class="dchip d'+esc(r.dispo)+'">'+esc(r.dispo||'-')+'</span>'+(r._superseded?'<span class="dchip" style="background:#9097a0">중복·과거</span>':'')+'</div>'
+        +'<div class="rec-top"><b>'+(esc(r.serial)||'(시리얼 없음)')+'</b><span class="dchip d'+esc(r.dispo)+'">'+esc(r.dispo||'-')+'</span>'+(r._superseded?'<span class="dchip" style="background:#b9bdc6">중복</span>':'')+'</div>'
         +'<div class="rec-meta">'+((r.sender||r.phone)?'<span class="k">보내는분</span> '+esc(r.sender||'')+(r.phone?' ('+esc(r.phone)+')':'')+'<br>':'')+'<span class="k">운송장</span> '+esc(r.waybill||'-')+' · <span class="k">외관</span> '+esc(r.appearance||r.reason||'-')+'<br><span class="k">작동</span> '+esc(r.working||'-')+' · <span class="k">패키지</span> '+esc(r.pkg||'-')+'<br>'+esc(r.dt||'')+(r.inspector?' · '+esc(r.inspector):'')+'</div>'
         +(r.memo?'<div class="rec-memo">'+esc(r.memo)+'</div>':'')
-        +(local?'<div class="rec-foot"><button class="rec-del" data-id="'+esc(r.id||'')+'">삭제</button></div>':'')
+        +(local?'<div class="rec-foot">'+((!r._superseded&&r.dispo!=='무효')?'<button class="rec-void" data-id="'+esc(r.id||'')+'">⛔ 무효</button>':'')+'<button class="rec-del" data-id="'+esc(r.id||'')+'">삭제</button></div>':'')
         +'</div>';
     });
     document.getElementById('recList').innerHTML=h;
@@ -512,14 +516,19 @@
   document.getElementById('recList').addEventListener('click',function(e){ var b=e.target.closest('.rec-del'); if(!b) return;
     var id=b.getAttribute('data-id');
     if(confirm('이 기록을 삭제할까요? (이 기기 목록만, 합본은 유지)')){ records=records.filter(function(r){ return r.id!==id; }); saveRecords(); renderRecords(); } });
+  document.getElementById('recList').addEventListener('click',function(e){ var v=e.target.closest('.rec-void'); if(!v) return;
+    var id=v.getAttribute('data-id');
+    if(confirm('이 기록을 ⛔무효 처리할까요?\n(오입력·중복 등 — 실제 폐기와 별도로 분류돼요)')){
+      var rec=null; records.forEach(function(r){ if(r.id===id){ r.dispo='무효'; rec=r; } });
+      if(rec){ saveRecords(); pending.push(rec); savePending(); flushPending(); renderRecords(); toast('⛔ 무효 처리됨'); } } });
   document.getElementById('clearRecBtn').addEventListener('click',function(){ if(!records.length) return;
     if(confirm('이 기기 '+records.length+'건을 전부 삭제할까요? (합본 클라우드는 유지)')){ records=[]; saveRecords(); renderRecords(); } });
 
   document.getElementById('exportBtn').addEventListener('click',function(){
-    var all=dedup(curList()); var list=filterDispo? all.filter(function(r){ return r.dispo===filterDispo; }) : all.filter(function(r){ return r.dispo!=='폐기'; });
+    var all=dedup(curList()); var list=filterDispo? all.filter(function(r){ return r.dispo===filterDispo; }) : all.filter(function(r){ return r.dispo!=='폐기' && r.dispo!=='무효'; });
     if(!list.length){ toast('내보낼 기록이 없어요'); return; }
     var rows=[['번호','검수자','운송장번호','시리얼','보내는분','전화일부','검수일시','제품외관','작동상태','패키지상태','처분','비고']];
-    list.forEach(function(r,i){ rows.push([i+1, r.inspector||'', r.waybill||'', r.serial||'', r.sender||'', r.phone||'', r.dt||'', r.appearance||r.reason||'', r.working||'', r.pkg||'', r.dispo||'', (r._superseded?'[중복 시리얼·과거건→폐기] ':'')+(r.memo||'')]); });
+    list.forEach(function(r,i){ rows.push([i+1, r.inspector||'', r.waybill||'', r.serial||'', r.sender||'', r.phone||'', r.dt||'', r.appearance||r.reason||'', r.working||'', r.pkg||'', r.dispo||'', (r._superseded?'[중복→무효] ':'')+(r.memo||'')]); });
     var csv=rows.map(function(row){ return row.map(function(c){ c=(''+c).replace(/"/g,'""'); return /[",\n\r]/.test(c)?'"'+c+'"':c; }).join(','); }).join('\r\n');
     var blob=new Blob([String.fromCharCode(0xFEFF)+csv],{type:'text/csv;charset=utf-8;'});
     var d=new Date(), tag=(viewMode==='cloud'?'합본':'이기기')+(filterDispo?'_'+filterDispo:'');
