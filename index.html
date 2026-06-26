@@ -32,6 +32,8 @@
     font-variant-numeric:tabular-nums;letter-spacing:.5px;}
   .serial input:focus{outline:none;}
   .serial .hint{font-size:12px;color:var(--sub);margin-top:7px;line-height:1.45;}
+  .wbwarn{display:none;font-size:12.5px;font-weight:700;color:#c81e2c;background:#fff0f1;border:1px solid #ffc9ce;border-radius:7px;padding:8px 10px;margin-top:7px;line-height:1.45;}
+  .wbwarn.show{display:block;}
   .serial .srow{display:flex;gap:8px;}
   .serial .srow input{flex:1;min-width:0;}
   .scanbtn{flex-shrink:0;background:#000;color:#fff;border:none;font-weight:700;font-size:14px;padding:0 16px;cursor:pointer;}
@@ -175,6 +177,7 @@
       <button class="scanbtn" data-target="waybillInput">📷 스캔</button>
     </div>
     <div class="hint">📷 스캔으로 송장의 <b>운송장번호 바코드</b>를 찍으면 자동 입력돼요.</div>
+    <div class="wbwarn" id="wbWarn"></div>
   </div>
 
   <div class="serial">
@@ -355,7 +358,16 @@
   var senderFirst=document.getElementById('senderFirst'), senderLast=document.getElementById('senderLast'), phoneMid=document.getElementById('phoneMid');
   waybillInput.value=state['_waybill']||''; serialInput.value=state['_serial']||''; memoInput.value=state['_memo']||'';
   senderFirst.value=state['_senderF']||''; senderLast.value=state['_senderL']||''; phoneMid.value=state['_phoneMid']||'';
-  waybillInput.addEventListener('input',function(){ state['_waybill']=waybillInput.value; save(); });
+  function checkWaybill(){
+    var w=(waybillInput.value||'').trim(), warn=document.getElementById('wbWarn'); if(!warn) return;
+    var digits=w.replace(/[^0-9]/g,''), hasAlpha=/[A-Za-z]/.test(w);
+    if(w && (hasAlpha || digits.length<10)){
+      warn.className='wbwarn show';
+      warn.innerHTML='⚠️ 운송장번호가 아닌 것 같아요 (<b>'+esc(w)+'</b>).<br>송장 하단 <b>노란 분류라벨</b>이 아니라, <b>「운송장번호」 옆 가로 막대 바코드</b>(숫자 10~12자리)를 스캔하세요.';
+    } else { warn.className='wbwarn'; warn.innerHTML=''; }
+  }
+  waybillInput.addEventListener('input',function(){ state['_waybill']=waybillInput.value; checkWaybill(); save(); });
+  checkWaybill();
   serialInput.addEventListener('input',function(){ state['_serial']=serialInput.value; save(); });
   memoInput.addEventListener('input',function(){ state['_memo']=memoInput.value; save(); });
   function buildSender(){ var f=(senderFirst.value||'').trim(), l=(senderLast.value||'').trim(); state['_senderF']=f; state['_senderL']=l; state['_sender']=(f||l)?(f+'*'+l):''; }
@@ -376,7 +388,7 @@
     html5qr.start({facingMode:"environment"}, {fps:12, videoConstraints:vc},
       function(text){
         var tgt=scanTarget;
-        var inp=document.getElementById(tgt); if(inp){ inp.value=text; state[tgt==='serialInput'?'_serial':'_waybill']=text; save(); }
+        var inp=document.getElementById(tgt); if(inp){ inp.value=text; state[tgt==='serialInput'?'_serial':'_waybill']=text; if(tgt==='waybillInput') checkWaybill(); save(); }
         if(navigator.vibrate) navigator.vibrate(90); stopScan();
       }, function(){}
     ).then(function(){
@@ -460,7 +472,7 @@
       appearance:state['appearance']||'', working:state['working']||'', pkg:state['pkg']||'', dispo:state['dispo']||'', memo:(state['_memo']||'').trim()};
     records.push(rec); saveRecords();
     pending.push(rec); savePending(); flushPending();
-    state={}; save(); render(); waybillInput.value=''; serialInput.value=''; memoInput.value=''; senderFirst.value=''; senderLast.value=''; phoneMid.value='';
+    state={}; save(); render(); waybillInput.value=''; serialInput.value=''; memoInput.value=''; senderFirst.value=''; senderLast.value=''; phoneMid.value=''; checkWaybill();
     window.scrollTo({top:0,behavior:'smooth'});
     toast('✓ 저장됨 ['+rec.dispo+'] · 총 '+dedup(records).length+'건');
   }
